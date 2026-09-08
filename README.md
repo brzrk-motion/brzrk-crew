@@ -1,10 +1,10 @@
 # brzrk-crew
 
-A local, inspectable Grok Bot-inspired chat workspace for a five-agent crew. This MVP is deliberately small: one responsive workspace, deterministic orchestration, persisted browser state, and an approval boundary with no external side effects.
+A local, inspectable Grok Bot-inspired chat workspace for a five-agent crew. The MVP is deliberately small: one responsive workspace, deterministic sequential orchestration, browser-local conversation history, structured handoffs, recoverable run statuses, and an approval boundary with no external side effects.
 
 ## Run
 
-Requirements: Node 20+ (validated with Node 26) and npm.
+Requirements: Node 20+ and npm.
 
 ```sh
 npm install
@@ -15,25 +15,25 @@ npm run dev
 Verification commands:
 
 ```sh
-npm test       # Vitest domain tests
-npm run build  # TypeScript project check and production build
+npm test
+npm run build
 npm run preview
 ```
 
 ## Architecture
 
-- `src/main.tsx` is the thin UI/orchestration shell: left conversation rail, central timeline/composer, and crew/activity rail.
-- `src/domain/crew.ts` contains fixed agent profiles, mention/keyword routing, the run status transition helper, and approval transition rules.
-- `src/domain/store.ts` is the local persistence boundary. Conversations, messages, runs, events, handoffs, and approvals are serialized to browser `localStorage`; no media or external database is used.
-- `src/domain/provider.ts` defines the `ChatProvider` adapter contract. `mockProvider` is deterministic and local. The future xAI integration point is replacing that implementation with an xAI Responses API adapter (and adding server-side secret handling plus streaming), without changing the workspace domain types.
-- `src/test/domain.test.ts` covers explicit/keyword routing, handoff/completion status behavior, and the approval boundary.
+- `src/main.tsx` is the responsive UI shell and delegates work to the domain orchestrator.
+- `src/domain/crew.ts` contains agent profiles, routing, lifecycle transitions, and approval transitions.
+- `src/domain/orchestrator.ts` runs specialists sequentially, passes the prior structured result as handoff context, preserves evidence/uncertainties/next action, records failures/cancellation, and pauses on approval.
+- `src/domain/store.ts` persists a collection of conversations, each with messages, runs, events, handoffs, and approvals in browser `localStorage`.
+- `src/domain/provider.ts` defines the mock-first provider boundary. The provider is deterministic, local, and has no network or external side effects.
 
-The mock run is sequential: Breakwater routes to a specialist, each specialist returns a structured result, and later specialists receive an explicit persisted handoff record. Prompts containing publish/send/delete/spend/production produce a pending approval card. Approve/deny only updates local state and records an event; it never performs the proposed action.
+Breakwater routes to specialists and the UI presents the returned specialist work. Approval decisions resolve the linked waiting run locally; approval never performs the proposed action. A future provider adapter can replace the mock without changing the workspace domain.
 
 ## Agents
 
-Breakwater (manager/orchestration), Reef (research/evidence), Swell (documentation/clarity), Tide (outreach/drafts), and Wake (review/verification). Use `@reef`, `@swell`, `@tide`, `@wake`, or `@breakwater` to route directly; otherwise simple keywords select a specialist and Breakwater is the default.
+Breakwater (manager/orchestration), Reef (research/evidence), Swell (documentation/clarity), Tide (outreach/drafts), and Wake (review/verification). Use `@reef`, `@swell`, `@tide`, `@wake`, or `@breakwater` to route directly; simple keywords select a specialist and Breakwater is the default.
 
-## Limitations and next steps
+## Limitations
 
-This is single-user, browser-local mock mode. There is no authentication, multi-device sync, real xAI streaming, tool execution, artifact storage, retry/cancel control, parallel delegation, or production database. Approval semantics are intentionally broad and simulated. The next safe increment is a server-side provider adapter with xAI credentials kept off the client, streamed events, and a narrow allowlisted tool/approval policy.
+This is single-user browser-local mock mode. There is no authentication, multi-device sync, real provider streaming, tool execution, artifact storage, parallel delegation, or production database. Consequential actions remain simulated and explicitly side-effect-free.
