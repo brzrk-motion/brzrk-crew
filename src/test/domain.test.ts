@@ -1,0 +1,4 @@
+import {describe,it,expect} from 'vitest'; import {approvalTransition,nextRunStatus,routeMessage} from '../domain/crew';
+describe('manager routing',()=>{it('honors explicit mentions',()=>expect(routeMessage('Ask @reef and @wake to check this')).toEqual(['reef','wake']));it('uses keywords',()=>expect(routeMessage('find sources for this')).toEqual(['reef']));});
+describe('run status contract',()=>{it('moves through handoff and completion',()=>{expect(nextRunStatus('working','handoff')).toBe('handing_off');expect(nextRunStatus('handing_off','complete')).toBe('completed');});});
+describe('approval boundary',()=>{it('approves pending actions but does not mutate decided actions',()=>{const p={id:'1',action:'Publish draft',status:'pending' as const,createdAt:0};expect(approvalTransition(p,'approve').status).toBe('approved');expect(approvalTransition({...p,status:'denied'},'approve').status).toBe('denied');});});
