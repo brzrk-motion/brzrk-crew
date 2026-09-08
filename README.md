@@ -24,11 +24,11 @@ npm run preview
 
 - `src/main.tsx` is the responsive UI shell and delegates work to the domain orchestrator.
 - `src/domain/crew.ts` contains agent profiles, routing, lifecycle transitions, and approval transitions.
-- `src/domain/orchestrator.ts` runs specialists sequentially, passes the prior structured result as handoff context, preserves evidence/uncertainties/next action, records failures/cancellation, and pauses on approval.
-- `src/domain/store.ts` persists a collection of conversations, each with messages, runs, events, handoffs, and approvals in browser `localStorage`.
+- `src/domain/orchestrator.ts` runs specialists sequentially, passes every completed structured result to final synthesis, preserves evidence/uncertainties/blockers/next action, records typed workflow events and handoffs, records failures/cancellation, and pauses on approval.
+- `src/domain/store.ts` persists a collection of conversations, each with messages, runs, events, handoffs, and approvals in browser `localStorage`; approval decisions are idempotent and close the local workflow with a final manager message.
 - `src/domain/provider.ts` defines the mock-first provider boundary. The provider is deterministic, local, and has no network or external side effects.
 
-Breakwater routes to specialists and the UI presents the returned specialist work. Approval decisions resolve the linked waiting run locally; approval never performs the proposed action. A future provider adapter can replace the mock without changing the workspace domain.
+Approval decisions close the local workflow with an explicit manager message; approval never performs the proposed action. Active runs have a Stop control that records cancellation. A future provider adapter can replace the mock without changing the workspace domain.
 
 ## Agents
 
