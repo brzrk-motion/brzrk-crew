@@ -18,11 +18,25 @@ describe('orchestration', () => {
     const response = await orchestrate({conversation: newConversation(), prompt: 'research', agents: ['reef', 'wake'], provider: {complete: async ({agent, context}) => { resultCalls.push({agent, context}); return result(agent, context); }}});
     expect(resultCalls[2].agent).toBe('breakwater'); expect(resultCalls[2].context).toContain('reef'); expect(resultCalls[2].context).toContain('wake');
     expect(response.conversation.messages[0].blockers).toEqual(['blocker']); expect(response.conversation.runs[0].blockers).toEqual(['blocker']); expect(response.conversation.handoffs[0].transition).toBe('handoff');
+    expect(response.conversation.events.map(event => event.type)).toEqual(['working', 'handoff', 'completed', 'working', 'handoff', 'completed', 'working', 'completed']);
+    expect(response.conversation.events[1]).toMatchObject({runId: response.conversation.runs[0].id, runStatus: 'handing_off', from: 'breakwater', to: 'reef'});
+    expect(response.conversation.events[4]).toMatchObject({runId: response.conversation.runs[1].id, runStatus: 'handing_off', from: 'reef', to: 'wake'});
   });
   it('pauses on approval with a typed approval event', async () => {
     const response = await orchestrate({conversation: newConversation(), prompt: 'publish this', agents: ['tide'], provider: {...provider, complete: async () => ({...result('tide', ''), requiresApproval: true})}});
     expect(response.paused).toBe(true); expect(response.conversation.approvals[0].runId).toBe(response.conversation.runs[0].id); expect(response.conversation.runs[0].status).toBe('waiting_for_approval'); expect(response.conversation.events.at(-1)?.approvalRequired).toBe(true);
   });
+  it('pauses final synthesis behind a persisted approval boundary', async () => {
+    const response = await orchestrate({conversation: newConversation(), prompt: 'synthesize this', agents: ['tide'], provider: {complete: async ({agent}) => ({...result(agent, ''), requiresApproval: agent === 'breakwater'})}});
+    const approval = response.conversation.approvals[0]; const synthesisRun = response.conversation.runs.find(run => run.agent === 'breakwater');
+    expect(response.paused).toBe(true); expect(approval).toMatchObject({runId: synthesisRun?.id, status: 'pending'}); expect(synthesisRun?.status).toBe('waiting_for_approval');
+    expect(response.conversation.events.at(-1)).toMatchObject({type: 'waiting_for_approval', runId: synthesisRun?.id, runStatus: 'waiting_for_approval', approvalRequired: true});
+    const approved = resolveApproval(response.conversation, approval.id, 'approve');
+    expect(approved.approvals[0].status).toBe('approved'); expect(approved.runs.find(run => run.id === synthesisRun?.id)?.status).toBe('completed'); expect(approved.events.at(-1)).toMatchObject({type: 'approved', runId: synthesisRun?.id, runStatus: 'completed'});
+    const denied = resolveApproval(response.conversation, approval.id, 'deny');
+    expect(denied.approvals[0].status).toBe('denied'); expect(denied.runs.find(run => run.id === synthesisRun?.id)?.status).toBe('cancelled'); expect(denied.events.at(-1)).toMatchObject({type: 'denied', runId: synthesisRun?.id, runStatus: 'cancelled'});
+  });
+
   it('records failure after partial success', async () => {
     const response = await orchestrate({conversation: newConversation(), prompt: 'partial', agents: ['reef', 'wake'], provider: {complete: async ({agent, context}) => { if (agent === 'wake') throw new Error('offline'); return result(agent, context); }}});
     expect(response.conversation.runs[0].status).toBe('completed'); expect(response.conversation.runs[1].status).toBe('failed'); expect(response.conversation.events.at(-1)?.type).toBe('failed');

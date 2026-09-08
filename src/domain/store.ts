@@ -14,6 +14,7 @@ export interface Handoff {
 export type WorkflowEventType = 'assigned' | 'working' | 'handoff' | 'waiting_for_approval' | 'approved' | 'denied' | 'completed' | 'failed' | 'cancelled';
 export interface EventPayload {
   owner?: AgentId; objective?: string; evidence?: string[]; nextAction?: string; approvalRequired?: boolean;
+  runId?: string; runStatus?: RunStatus; from?: AgentId; to?: AgentId;
 }
 export interface Event extends EventPayload { id: string; type: WorkflowEventType; text: string; createdAt: number; }
 export interface Conversation { id: string; title: string; messages: Message[]; runs: Run[]; events: Event[]; handoffs: Handoff[]; approvals: Approval[]; createdAt: number; updatedAt: number; }
@@ -48,6 +49,6 @@ export function resolveApproval(conversation: Conversation, approvalId: string, 
     approvals: conversation.approvals.map(item => item.id === approvalId ? next : item),
     runs: conversation.runs.map(item => item.id === run.id ? {...item, status: decision === 'approve' ? 'completed' : 'cancelled', finishedAt: Date.now()} : item),
     messages: [...conversation.messages, finalMessage],
-    events: [...conversation.events, {id: crypto.randomUUID(), type: decision === 'approve' ? 'approved' : 'denied', text: decision === 'approve' ? 'Manager recorded approval and closed the local workflow.' : 'Manager recorded denial and closed the local workflow.', createdAt: Date.now(), owner: 'breakwater', objective: run.task, evidence: finalMessage.evidence, nextAction: finalMessage.proposedNextAction, approvalRequired: false}],
+    events: [...conversation.events, {id: crypto.randomUUID(), type: decision === 'approve' ? 'approved' : 'denied', text: decision === 'approve' ? 'Manager recorded approval and closed the local workflow.' : 'Manager recorded denial and closed the local workflow.', createdAt: Date.now(), owner: 'breakwater', objective: run.task, runId: run.id, runStatus: decision === 'approve' ? 'completed' : 'cancelled', evidence: finalMessage.evidence, nextAction: finalMessage.proposedNextAction, approvalRequired: false}],
   };
 }
