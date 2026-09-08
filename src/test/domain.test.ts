@@ -37,6 +37,19 @@ describe('orchestration', () => {
     expect(denied.approvals[0].status).toBe('denied'); expect(denied.runs.find(run => run.id === synthesisRun?.id)?.status).toBe('cancelled'); expect(denied.events.at(-1)).toMatchObject({type: 'denied', runId: synthesisRun?.id, runStatus: 'cancelled'});
   });
 
+  it('marks synthesis provider failure as a terminal failed run with retry metadata', async () => {
+    const response = await orchestrate({conversation: newConversation(), prompt: 'synthesize failure', agents: ['tide'], provider: {complete: async ({agent, context}) => { if (agent === 'breakwater') throw new Error('synthesis offline'); return result(agent, context); }}});
+    const synthesisRun = response.conversation.runs.find(run => run.agent === 'breakwater');
+    expect(synthesisRun).toMatchObject({status: 'failed', error: 'synthesis offline'}); expect(synthesisRun?.finishedAt).toBeTypeOf('number');
+    expect(response.conversation.events.at(-1)).toMatchObject({type: 'failed', runId: synthesisRun?.id, runStatus: 'failed', error: 'synthesis offline', nextAction: 'Retry the final synthesis'});
+  });
+  it('marks synthesis cancellation during execution as a terminal cancelled run', async () => {
+    const controller = new AbortController();
+    const response = await orchestrate({conversation: newConversation(), prompt: 'cancel synthesis', agents: ['tide'], provider: {complete: async ({agent, context}) => { if (agent === 'breakwater') { controller.abort(); return result(agent, context); } return result(agent, context); }}, signal: controller.signal});
+    const synthesisRun = response.conversation.runs.find(run => run.agent === 'breakwater');
+    expect(synthesisRun).toMatchObject({status: 'cancelled', error: 'Run cancelled'}); expect(synthesisRun?.finishedAt).toBeTypeOf('number');
+    expect(response.conversation.events.at(-1)).toMatchObject({type: 'cancelled', runId: synthesisRun?.id, runStatus: 'cancelled', nextAction: 'Retry the run when ready'});
+  });
   it('records failure after partial success', async () => {
     const response = await orchestrate({conversation: newConversation(), prompt: 'partial', agents: ['reef', 'wake'], provider: {complete: async ({agent, context}) => { if (agent === 'wake') throw new Error('offline'); return result(agent, context); }}});
     expect(response.conversation.runs[0].status).toBe('completed'); expect(response.conversation.runs[1].status).toBe('failed'); expect(response.conversation.events.at(-1)?.type).toBe('failed');

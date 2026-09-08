@@ -13,7 +13,7 @@ export interface Handoff {
 }
 export type WorkflowEventType = 'assigned' | 'working' | 'handoff' | 'waiting_for_approval' | 'approved' | 'denied' | 'completed' | 'failed' | 'cancelled';
 export interface EventPayload {
-  owner?: AgentId; objective?: string; evidence?: string[]; nextAction?: string; approvalRequired?: boolean;
+  owner?: AgentId; objective?: string; evidence?: string[]; nextAction?: string; error?: string; approvalRequired?: boolean;
   runId?: string; runStatus?: RunStatus; from?: AgentId; to?: AgentId;
 }
 export interface Event extends EventPayload { id: string; type: WorkflowEventType; text: string; createdAt: number; }

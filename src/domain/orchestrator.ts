@@ -8,7 +8,7 @@ const isAbort = (error: unknown) => error instanceof DOMException ? error.name =
 const workflowEvent = (id: string, type: Event['type'], text: string, createdAt: number, payload: Partial<Event> = {}): Event => ({id, type, text, createdAt, ...payload});
 const cancelled = (run: Run, now: () => number, uid: () => string, current: Conversation, agent: AgentId): OrchestrationResult => {
   const runs = current.runs.some(item => item.id === run.id) ? current.runs.map(item => item.id === run.id ? {...item, status: 'cancelled' as const, finishedAt: now(), error: 'Run cancelled'} : item) : [...current.runs, {...run, status: 'cancelled' as const, finishedAt: now(), error: 'Run cancelled'}];
-  return {conversation: {...current, runs, events: [...current.events, workflowEvent(uid(), 'cancelled', `${agentById(agent).name} was cancelled`, now(), {owner: agent, objective: run.task, approvalRequired: false})]}, paused: false};
+  return {conversation: {...current, runs, events: [...current.events, workflowEvent(uid(), 'cancelled', `${agentById(agent).name} was cancelled`, now(), {owner: agent, objective: run.task, runId: run.id, runStatus: 'cancelled', error: 'Run cancelled', nextAction: 'Retry the run when ready', approvalRequired: false})]}, paused: false};
 };
 
 export async function orchestrate({conversation, prompt, agents, provider, signal, now = Date.now, uid = () => crypto.randomUUID()}: OrchestrationOptions): Promise<OrchestrationResult> {
@@ -47,20 +47,21 @@ export async function orchestrate({conversation, prompt, agents, provider, signa
     }
   }
   if (signal?.aborted || !structuredResults.length) return {conversation: current, paused: false};
+  const synthesisRun: Run = {id: uid(), agent: 'breakwater', status: nextRunStatus('queued', 'start'), task: prompt, createdAt: now()};
   try {
-    const synthesisRun: Run = {id: uid(), agent: 'breakwater', status: nextRunStatus('queued', 'start'), task: prompt, createdAt: now()};
     current = {...current, runs: [...current.runs, synthesisRun], events: [...current.events, workflowEvent(uid(), 'working', 'Breakwater is preparing the final synthesis', now(), {owner: 'breakwater', objective: prompt, runId: synthesisRun.id, runStatus: synthesisRun.status, approvalRequired: false})]};
     const context = JSON.stringify({prompt, completedSpecialists: structuredResults});
     const synthesis = await provider.complete({prompt: `Synthesize the completed specialist work for: ${prompt}`, agent: 'breakwater', context});
-    if (signal?.aborted) return {conversation: {...current, events: [...current.events, workflowEvent(uid(), 'cancelled', 'Final synthesis was cancelled', now(), {owner: 'breakwater', objective: prompt})]}, paused: false};
+    if (signal?.aborted) return cancelled(synthesisRun, now, uid, current, 'breakwater');
     const message: Message = {id: uid(), role: 'assistant', agent: 'breakwater', content: `Final synthesis: ${synthesis.result}`, createdAt: now(), evidence: synthesis.evidence, uncertainties: synthesis.uncertainties, blockers: synthesis.blockers, proposedNextAction: synthesis.proposedNextAction};
     const waiting = Boolean(synthesis.requiresApproval);
     const approval = waiting ? {id: uid(), runId: synthesisRun.id, action: synthesis.proposedNextAction, payload: JSON.stringify({prompt, agent: 'breakwater', result: synthesis}), status: 'pending' as const, createdAt: now()} : undefined;
     const status = waiting ? nextRunStatus(synthesisRun.status, 'approval') : nextRunStatus(synthesisRun.status, 'complete');
     return {conversation: {...current, messages: [...current.messages, message], runs: current.runs.map(item => item.id === synthesisRun.id ? {...item, status, finishedAt: waiting ? undefined : now(), output: synthesis.result, evidence: synthesis.evidence, uncertainties: synthesis.uncertainties, blockers: synthesis.blockers} : item), approvals: approval ? [...current.approvals, approval] : current.approvals, events: [...current.events, workflowEvent(uid(), waiting ? 'waiting_for_approval' : 'completed', waiting ? 'Breakwater is waiting for approval' : 'Breakwater completed the final synthesis', now(), {owner: 'breakwater', objective: prompt, runId: synthesisRun.id, runStatus: status, evidence: synthesis.evidence, nextAction: synthesis.proposedNextAction, approvalRequired: waiting})]}, paused: waiting};
   } catch (error) {
-    if (isAbort(error)) return {conversation: current, paused: false};
+    if (isAbort(error)) return cancelled(synthesisRun, now, uid, current, 'breakwater');
     const message = error instanceof Error ? error.message : String(error);
-    return {conversation: {...current, events: [...current.events, workflowEvent(uid(), 'failed', `Breakwater synthesis failed: ${message}`, now(), {owner: 'breakwater', objective: prompt})]}, paused: false};
+    const runStatus = nextRunStatus(synthesisRun.status, 'fail');
+    return {conversation: {...current, runs: current.runs.map(item => item.id === synthesisRun.id ? {...item, status: runStatus, finishedAt: now(), error: message} : item), events: [...current.events, workflowEvent(uid(), 'failed', `Breakwater synthesis failed: ${message}`, now(), {owner: 'breakwater', objective: prompt, runId: synthesisRun.id, runStatus, error: message, nextAction: 'Retry the final synthesis', approvalRequired: false})]}, paused: false};
   }
 }
